@@ -1,0 +1,48 @@
+version: '3.8'
+services:
+  kafka:
+    image: bitnami/kafka:latest
+    container_name: kafka
+    restart: unless-stopped
+    hostname: kafka
+    ports:
+      - "9092:9092"   # SASL_PLAINTEXT listener
+    environment:
+      # KRaft (no ZooKeeper) specific settings
+      KAFKA_CFG_NODE_ID: "0"
+      KAFKA_CFG_PROCESS_ROLES: "controller,broker"
+      KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: "0@kafka:9093"
+      KAFKA_CFG_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
+
+      # Listeners & advertised listeners
+      KAFKA_CFG_LISTENERS: "SASL_SSL://:9092,CONTROLLER://:9093"
+      KAFKA_CFG_ADVERTISED_LISTENERS: "SASL_SSL://localhost:9092"
+      KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,SASL_SSL:SASL_SSL"
+      KAFKA_CFG_INTER_BROKER_LISTENER_NAME: "SASL_SSL"
+
+      # TLS settings – we mount ready-made PEM files below
+      KAFKA_TLS_TYPE: "PEM"
+
+      # SASL/PLAIN authentication
+      KAFKA_CFG_SASL_ENABLED_MECHANISMS: "PLAIN"
+      KAFKA_CFG_SASL_MECHANISM_INTER_BROKER_PROTOCOL: "PLAIN"
+      # Inter-broker auth user
+      KAFKA_INTER_BROKER_USER: "admin"
+      KAFKA_INTER_BROKER_PASSWORD: "admin123"
+      # Client users (comma-separated)
+      KAFKA_CLIENT_USERS: "user"
+      KAFKA_CLIENT_PASSWORDS: "bitnami123"
+
+    volumes:
+      # TLS material
+      - ./certs/kafka.keystore.pem:/opt/bitnami/kafka/config/certs/kafka.keystore.pem:ro
+      - ./certs/kafka.keystore.key:/opt/bitnami/kafka/config/certs/kafka.keystore.key:ro
+      - ./certs/kafka.truststore.pem:/opt/bitnami/kafka/config/certs/kafka.truststore.pem:ro
+      # JAAS definition for PLAIN users (generated locally)
+      - ./kafka_jaas.conf:/opt/bitnami/kafka/config/kafka_jaas.conf:ro
+
+    healthcheck:
+      test: ["CMD", "bash", "-c", "kafka-broker-api-versions.sh --bootstrap-server kafka:9092 --command-config <(echo 'sasl.mechanism=PLAIN'; echo 'security.protocol=SASL_SSL'; echo 'sasl.jaas.config=org.apache.kafka.common.security.plain.PlainLoginModule required username=\"user\" password=\"bitnami123\"; echo ssl.truststore.location=/opt/bitnami/kafka/config/certs/kafka.truststore.pem') | grep -q 'supported'" ]
+      interval: 30s
+      timeout: 10s
+      retries: 5 
